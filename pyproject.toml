@@ -1,0 +1,21 @@
+[project]
+name = "data-incident-investigator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Adiii19", email = "2022.aditya.mhatre@ves.ac.in" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=2.0.0",
+    "psycopg[binary]>=3.2.1",
+    "sqlalchemy>=2.0.0",
+]
+
+[project.scripts]
+data-incident-investigator = "data_incident_investigator:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"

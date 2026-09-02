@@ -1,5 +1,5 @@
 [project]
-name = "data-incident-investigator"
+name = "incident-investigator"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=2.0.0",
     "psycopg[binary]>=3.2.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
     "sqlalchemy>=2.0.0",
 ]
 

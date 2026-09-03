@@ -94,6 +94,17 @@ def investigate_pipeline(
         )
     )
 
+    rows_count_analysis=(
+        investigation.analyze_row_counts(
+            latest_run,
+            historical_runs,
+        )
+    )
+
+    error_analysis=investigation.analyze_error_patterns(
+       runs
+    )
+
     return {
         "found":True,
         "pipeline_name":pipeline_name,
@@ -107,7 +118,16 @@ def investigate_pipeline(
                 duration_analysis.model_dump(
                     mode="json"
                 )
-            )
+            ),
+            "row_count_anomaly":(
+                rows_count_analysis.model_dump(
+                    mode="json"
+                )
+            ),
+            "error_patterns":[
+                pattern.model_dump(mode="json")
+                for pattern in error_analysis
+            ]
         }
     }
 

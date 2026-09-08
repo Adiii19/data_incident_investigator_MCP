@@ -7,4 +7,4 @@ class ErrorPattern(BaseModel):
     latest_message:str|None
     evidence:list[Evidence]
 
-    
+

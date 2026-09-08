@@ -35,3 +35,66 @@ class PipelineService:
             end_time=end_time,
             limit=limit
         )
+
+    def get_pipeline_logs(
+            self,
+            pipeline_name:str,
+            limit:int=50
+    ):
+        pipeline=self.repository.get_pipeline_by_name(
+            pipeline_name
+        )
+
+        if pipeline is None:
+            return None
+
+        latest_run=self.repository.get_latest_run(
+            pipeline.id
+        )
+
+        if latest_run is None:
+            return[]
+
+        return self.repository.get_pipeline_logs(
+            latest_run.id,
+            limit
+        )
+
+    def get_latest_run_logs(
+                self,
+                pipeline_name:str,
+                limit:int=100
+        ):
+            pipeline=self.repository.get_pipeline_by_name(
+                pipeline_name
+            )
+
+            if pipeline is None:
+                return None
+
+            latest_run=self.repository.get_latest_run(
+                pipeline.id
+            )
+
+            if latest_run is None:
+                return []
+
+            return self.repository.get_pipeline_logs(
+                latest_run.id,
+                limit
+            )
+
+    def get_pipeline_dependencies(self,pipeline_name:str):
+
+        pipeline=self.repository.get_pipeline_by_name(
+            pipeline_name
+        )
+
+        if pipeline is None:
+            return None
+        
+        return self.repository.get_pipeline_dependencies(
+            pipeline.id
+        )
+
+    

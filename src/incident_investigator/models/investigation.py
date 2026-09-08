@@ -20,7 +20,7 @@ class DurationAnomaly(BaseModel):
     evidence:list[Evidence]
 
 class RowCountAnomaly(BaseModel):
-    rows_ready_anomaly:bool
+    rows_read_anomaly:bool
     rows_written_anomaly:bool
     latest_rows_read:int|None
     historical_average_rows_read:float|None

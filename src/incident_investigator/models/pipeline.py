@@ -12,3 +12,4 @@ class Pipeline(BaseModel):
     source: str | None
     destination: str | None
     created_at: datetime
+    environment: str | None

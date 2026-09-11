@@ -13,7 +13,41 @@ CREATE TABLE pipelines (
 
     destination VARCHAR(255),
 
+    environment VARCHAR(50) NOT NULL DEFAULT 'production',
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE pipeline_dependencies (
+
+    id BIGSERIAL PRIMARY KEY,
+
+    pipeline_id BIGINT NOT NULL
+        REFERENCES pipelines(id)
+        ON DELETE CASCADE,
+
+    dependency_name VARCHAR(150) NOT NULL,
+
+    dependency_type VARCHAR(50) NOT NULL,
+
+    connection_identifier VARCHAR(255)
+);
+
+CREATE TABLE deployments (
+
+    id BIGSERIAL PRIMARY KEY,
+
+    service_name VARCHAR(150) NOT NULL,
+
+    version VARCHAR(100) NOT NULL,
+
+    deployed_at TIMESTAMPTZ NOT NULL,
+
+    environment VARCHAR(50) NOT NULL,
+
+    deployed_by VARCHAR(100),
+
+    commit_sha VARCHAR(100)
 );
 
 CREATE TABLE pipeline_runs (

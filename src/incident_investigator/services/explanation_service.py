@@ -51,7 +51,7 @@ class ExplanationService:
                     "expired, or incorrectly configured."
                 ),
                 confidence=("high" if error_pattern.occurrences >= 3 else "medium"),
-                recommendations=[
+                recommendation=[
                     "Verify credentials.",
                     "Check whether secrets were recently rotated.",
                     "Check authentication configuration.",
@@ -73,7 +73,7 @@ class ExplanationService:
                 ),
                 hypothesis=("The source or destination schema " "may have changed."),
                 confidence=("high" if error_pattern.occurrences >= 3 else "medium"),
-                recommendations=[
+                recommendation=[
                     "Compare current schema with expected schema.",
                     "Check recent source-system schema changes.",
                     "Check pipeline transformation mappings.",
@@ -150,7 +150,7 @@ class ExplanationService:
                 "or increased processing latency."
             ),
             confidence="medium",
-            recommendations=[
+            recommendation=[
                 "check slow external dependencies",
                 "check database query performance" "Review resource utilization",
             ],
@@ -176,7 +176,7 @@ class ExplanationService:
             return None
 
         return EvidenceChain(
-            obeservation=("Abnormal data volume was detected"),
+            observation=("Abnormal data volume was detected"),
             evidence=evidence,
             correlation=(
                 "The abnormal row counts were observed"
@@ -195,59 +195,35 @@ class ExplanationService:
         )
 
     def build_evidence_chains(
-            self,
-            error_patterns,
-            dependency_analysis,
-            duration_anomaly,
-            row_count_anomaly
-    )->list[EvidenceChain]:
+        self, error_patterns, dependency_analysis, duration_anomaly, row_count_anomaly
+    ) -> list[EvidenceChain]:
 
-        chains=[]
+        chains = []
 
-        chains.extend(
-            self.build_error_chain(
-                error_patterns
-            )
-        )
+        chains.extend(self.build_error_chains(error_patterns))
 
         for dependency in dependency_analysis:
-            chains.append(
-                self.build_dependency_chain(
-                    dependency
-                )
-            )
+            chains.append(self.build_dependency_chain(dependency))
 
-        duration_chain=(
-            self.build_duration_chain(
-                duration_anomaly
-            )
-        )
+        duration_chain = self.build_duration_chain(duration_anomaly)
 
         if duration_chain is not None:
             chains.append(duration_chain)
 
-        row_chain=(
-            self.build_row_count_chain(
-                row_count_anomaly
-            )
-        )
+        row_chain = self.build_row_count_chain(row_count_anomaly)
 
         if row_chain is not None:
             chains.append(row_chain)
 
         return chains
 
-    def build_deployment_chains(
-            self,
-            deployments,
-            failure_time
-    ):
-        chains=[]
+    def build_deployment_chains(self, deployments, failure_time):
+        chains = []
 
         for deployment in deployments:
-            minutes_before_failure=(
-                failure_time-deployment.deployed_at
-            ).total_seconds()/60
+            minutes_before_failure = (
+                failure_time - deployment.deployed_at
+            ).total_seconds() / 60
 
             chains.append(
                 EvidenceChain(
@@ -256,7 +232,6 @@ class ExplanationService:
                         f"'{deployment.service_name}'"
                         f"occured before the pipeline failure."
                     ),
-
                     evidence=[
                         (
                             f"Version {deployment.version}"
@@ -264,45 +239,75 @@ class ExplanationService:
                             f"{minutes_before_failure:.1f}"
                             "minutes before failure"
                         ),
-                        (
-                            f"Deployment environment:"
-                            f"{deployment.environment}."
-                        ),
-                        (
-                            f"Commit: "
-                            f"{deployment.commit_sha or 'unknown'}"
-                        )
+                        (f"Deployment environment:" f"{deployment.environment}."),
+                        (f"Commit: " f"{deployment.commit_sha or 'unknown'}"),
                     ],
-
                     correlation=(
-                         "The deployment occurred within "
-                    "the investigation window before "
-                    "the pipeline failure."
+                        "The deployment occurred within "
+                        "the investigation window before "
+                        "the pipeline failure."
                     ),
-
                     hypothesis=(
                         f"The deployment of"
                         f"'{deployment.service_name}'"
                         "may have introduced a change"
                         "related to the incident."
                     ),
-
-                     confidence=(
-                    "high"
-                    if minutes_before_failure <= 30
-                    else "medium"
-                ),
-
-                recommendations=[
-                    (
-                        f"Review changes introduced in "
-                        f"version {deployment.version}."
-                    ),
-                    (
-                        f"Inspect commit "
-                        f"{deployment.commit_sha or 'associated commit'}."
-                    ),
-                ],
-
+                    confidence=("high" if minutes_before_failure <= 30 else "medium"),
+                    recommendation=[
+                        (
+                            f"Review changes introduced in "
+                            f"version {deployment.version}."
+                        ),
+                        (
+                            f"Inspect commit "
+                            f"{deployment.commit_sha or 'associated commit'}."
+                        ),
+                    ],
                 )
             )
+
+        return chains
+
+    def build_deployment_correlation_chains(self, correlations):
+        chains = []
+
+        for correlation in correlations:
+            if correlation.confidence == "low":
+                continue
+            chains.append(
+                EvidenceChain(
+                    observation=(
+                        f"Deployment of "
+                        f"'{correlation.service_name}' "
+                        f"occurred before the pipeline failure."
+                    ),
+                    evidence=correlation.reasons,
+                    correlation=(
+                        f"The deployment occurred "
+                        f"{correlation.minutes_before_failure} "
+                        f"minutes before the failure and "
+                        f"received a correlation score of "
+                        f"{correlation.score}."
+                    ),
+                    hypothesis=(
+                        f"Changes introduced in "
+                        f"'{correlation.service_name}' version "
+                        f"'{correlation.version}' may be "
+                        f"related to the incident."
+                    ),
+                    confidence=correlation.confidence,
+                    recommendation=[
+                        (
+                            f"Review changes introduced in "
+                            f"version {correlation.version}."
+                        ),
+                        (
+                            f"Inspect deployment logs for "
+                        f"{correlation.service_name}."
+                        )
+                    ],
+                )
+            )
+
+        return chains

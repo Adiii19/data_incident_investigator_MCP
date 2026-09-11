@@ -8,4 +8,5 @@ class Deployment(BaseModel):
     deployed_at:datetime
     environment:str
     deployed_by:str|None
+    commit_sha:str|None = None
     

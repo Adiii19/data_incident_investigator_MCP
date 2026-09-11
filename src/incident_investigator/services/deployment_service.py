@@ -1,9 +1,11 @@
 from datetime import datetime,timedelta
 
+from incident_investigator.repositories.pipeline_repository import PipelineRepository
+
 class DeploymentService:
 
-    def __init__(self):
-        self.repository=self.repository
+    def __init__(self, repository: PipelineRepository):
+        self.repository = repository
 
     def get_recent_deployments(
             self,

@@ -25,10 +25,15 @@ from incident_investigator.models.evidence_chain import(
     EvidenceChain
 )
 
+from incident_investigator.models.risk_assessment import(
+    RiskAssessment
+)
+
 class IncidentReport(BaseModel):
     pipeline_name:str
-    sassessment:IncidentAssessment
-
+    assessment:IncidentAssessment
+    risk_assessment:RiskAssessment
+    
     failure_pattern:FailurePattern|None
     error_patterns:list[ErrorPattern]
     dependency_analysis:list[DependencyEvidence]
@@ -41,3 +46,4 @@ class IncidentReport(BaseModel):
 
     recommendations:list[Recommendation]
     evidence:list[str]
+   

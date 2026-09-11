@@ -25,6 +25,7 @@ class PipelineRepository:
                     schedule,
                     source,
                     destination,
+                    environment,
                     created_at
                 FROM pipelines
                 WHERE name = :pipeline_name
@@ -46,6 +47,7 @@ class PipelineRepository:
                     schedule=row.schedule,
                     source=row.source,
                     destination=row.destination,
+                    environment=row.environment,
                     created_at=row.created_at,
                 )
         except SQLAlchemyError:
@@ -237,7 +239,7 @@ class PipelineRepository:
             SELECT 
             id,
             service_name,
-            version
+            version,
             deployed_at,
             environment,
             deployed_by,

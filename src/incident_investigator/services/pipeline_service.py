@@ -97,4 +97,7 @@ class PipelineService:
             pipeline.id
         )
 
-    
+    def get_pipeline(self,pipeline_name:str):
+        return self.repository.get_pipeline_by_name(
+            pipeline_name
+        )

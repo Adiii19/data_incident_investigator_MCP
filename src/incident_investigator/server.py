@@ -8,8 +8,9 @@ from incident_investigator.models.requests import (
 )
 from incident_investigator.models.responses import PipelineStatusResponse
 from incident_investigator.repositories.pipeline_repository import PipelineRepository
-from incident_investigator.services import explaination_service, investigation_service
+from incident_investigator.services import explanation_service, investigation_service
 from incident_investigator.services import pipeline_service
+from incident_investigator.services.deployment_service import DeploymentService
 from incident_investigator.services.pipeline_service import PipelineService
 from incident_investigator.services.investigation_service import InvestigationService
 from incident_investigator.services.health_service import HealthService
@@ -17,6 +18,12 @@ from incident_investigator.services.log_analysis_service import LogAnalysisServi
 from incident_investigator.services.timeline_service import TimelineService
 from incident_investigator.services.explanation_service import(
     ExplanationService
+)
+from incident_investigator.services.deployment_correlation_service import(
+    DeploymentCorrelationService
+)
+from incident_investigator.services.risk_assessment_service import (
+    RiskAssessmentService,
 )
 
 mcp = MCPServer("Data Incident Investigator")
@@ -28,13 +35,30 @@ health_service = HealthService(engine)
 log_analysis_service = LogAnalysisService()
 timeline_service=TimelineService()
 explanation_service=ExplanationService()
+deployment_service=DeploymentService(
+    repository
+)
+deployment_correlation_service=(
+    DeploymentCorrelationService()
+)
+
+risk_assessment_service=RiskAssessmentService()
+
 
 investigation = InvestigationService(
      pipeline_service=service,
     log_analysis_service=log_analysis_service,
-    timeline_service=pipeline_service,
+    timeline_service=timeline_service,
+
+    deployment_service=deployment_service,
+    deployment_correlation_service=(
+        deployment_correlation_service
+    ),
     explanation_service=explanation_service,
+    risk_assessment_service=risk_assessment_service
 )
+
+
 
 @mcp.tool()
 def get_pipeline_status(request: PipelineStatusRequest) -> PipelineStatusResponse:
@@ -88,8 +112,9 @@ def investigate_pipeline(pipeline_name: str, limit: int = 10) -> dict:
     
     """
 
-    report=investigation_service.investigate_pipeline(
-        pipeline_name
+    report = investigation.investigate_pipeline(
+        pipeline_name,
+        limit=limit,
     )
 
     if report is None:
@@ -277,6 +302,35 @@ def get_incident_timeline(
             for event in pre_failure_events
         ]
 
+    }
+
+
+@mcp.resource(
+    "pipeline://{pipeline_name}",
+    name="pipeline_details",
+    description="Get details about a data pipeline",
+    mime_type="application/json"
+
+)
+def get_pipeline_resource(
+    pipeline_name:str
+)->dict:
+
+    pipeline=service.get_pipeline(
+        pipeline_name
+    )
+
+    if pipeline is None:
+        return {
+            "found":False,
+            "pipeline_name":pipeline_name,
+        }
+
+    return{
+        "found":True,
+        "pipeline":pipeline.model_dump(
+            mode="json"
+        )
     }
 
 

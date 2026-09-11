@@ -101,23 +101,23 @@ class LogAnalysisService:
 
         candidates=[]
 
-        for category,occurences in categories.items():
+        for category,occurrences in categories.items():
 
             confidence="low"
 
-            if occurences>=3:
+            if occurrences>=3:
                 confidence="high"
-            elif occurences>=2:
+            elif occurrences>=2:
                 confidence="medium"
 
             candidates.append(
                 {
                     "category":category,
-                    "occurrences":occurences,
+                    "occurrences":occurrences,
                     "confidence":confidence,
                     "latest_message":latest_messages[category],
                     "evidence":(
-                        f"{occurences} {category.replace('_','')}"
+                        f"{occurrences} {category.replace('_','')}"
                         "events occured shortly before the pipeline failed."
                     )
                 }
@@ -160,7 +160,7 @@ class LogAnalysisService:
 
                 connection_identifier=(
                     self.normalize_text(
-                        dependency,connection_identifier
+                        dependency.connection_identifier
                     )
                     if dependency.connection_identifier
                     else None

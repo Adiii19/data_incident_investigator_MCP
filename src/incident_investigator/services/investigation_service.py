@@ -1,3 +1,4 @@
+from codecs import replace_errors
 from datetime import timedelta
 from incident_investigator.models.incident import IncidentAssessment
 from incident_investigator.models.error_pattern import ErrorPattern
@@ -10,16 +11,28 @@ from incident_investigator.models.investigation import (
 )
 from incident_investigator.models.recommendation import Recommendation
 from incident_investigator.services import deployment_service, explanation_service
+from incident_investigator.services import deployment_correlation_service
 
 
 class InvestigationService:
 
-    def __init__(self, pipeline_service, log_analysis_service, timeline_service):
+    def __init__(
+        self,
+        pipeline_service,
+        log_analysis_service,
+        timeline_service,
+        deployment_service,
+        deployment_correlation_service,
+        explanation_service,
+        risk_assessment_service,
+    ):
         self.pipeline_service = pipeline_service
         self.log_analysis_service = log_analysis_service
         self.timeline_service = timeline_service
-        self.explanation_service=explanation_service
-        self.deployment_service=deployment_service
+        self.explanation_service = explanation_service
+        self.deployment_service = deployment_service
+        self.deployment_correlation_service = deployment_correlation_service
+        self.risk_assessment_service = risk_assessment_service
 
     def analyze_failure_pattern(self, runs):
         if not runs:
@@ -243,6 +256,9 @@ class InvestigationService:
             return "connection_timeout"
 
         if "authentication" in message or "password" in message:
+            return "schema_mismatch"
+
+        if "schema" in message or "column" in message or "type" in message:
             return "schema_mismatch"
 
         if "duplicate" in message:
@@ -525,11 +541,15 @@ class InvestigationService:
 
         return recommendations
 
-    def investigate_pipeline(self, pipeline_name: str) -> IncidentReport:
+    def investigate_pipeline(
+        self, pipeline_name: str, limit: int = 10
+    ) -> IncidentReport:
+
+        pipeline = self.pipeline_service.repository.get_pipeline_by_name(pipeline_name)
 
         runs = self.pipeline_service.get_recent_runs(
             pipeline_name,
-            limit=10,
+            limit=limit,
         )
 
         if runs is None:
@@ -547,13 +567,15 @@ class InvestigationService:
             historical_runs,
         )
 
-        logs = self.pipeline_service.get_latest_run_logs(pipeline_name)
+        logs = self.pipeline_service.get_latest_run_logs(pipeline_name) or []
 
-        error_patterns = self.log_analysis_service.analyze_error_patterns(logs)
+        error_patterns = self.analyze_error_patterns(runs)
 
         timeline = self.timeline_service.build_timeline(logs)
 
-        dependencies = self.pipeline_service.get_pipeline_dependencies(pipeline_name)
+        dependencies = (
+            self.pipeline_service.get_pipeline_dependencies(pipeline_name) or []
+        )
 
         dependency_analysis = []
 
@@ -568,45 +590,70 @@ class InvestigationService:
 
         assessment = self.build_incident_assessment(
             failure_pattern,
-            duration_anomaly=duration_anomaly,
-            row_count_anomaly=row_count_anomaly,
+            duration_analysis=duration_anomaly,
+            row_count_analysis=row_count_anomaly,
             error_patterns=error_patterns,
         )
 
         recommendation = self.generate_recommendation(
-            assessment.hypotheses, error_patterns
+            assessment.hypothesis, error_patterns
         )
 
-        evidence_chains=(
-            self.explanation_service.build_evidence_chains(
-                error_patterns=error_patterns,
-                dependency_analysis=dependency_analysis,
-                duration_anomaly=duration_anomaly,
-                row_count_anomaly=row_count_anomaly
-            )
+        evidence_chains = self.explanation_service.build_evidence_chains(
+            error_patterns=error_patterns,
+            dependency_analysis=dependency_analysis,
+            duration_anomaly=duration_anomaly,
+            row_count_anomaly=row_count_anomaly,
         )
 
-        failure_time=latest_run.completed_at
-        if failure_time is None:
-            failure_time=latest_run.started_at
-
-
-        deployments=(
+        failure_time = latest_run.completed_at
+        failure_time = latest_run.completed_at or latest_run.started_at
+        deployments = (
             self.deployment_service.get_recent_deployments(
-                environment=self.pipeline_service.environment,
-                failure_time=failure_time
+                environment=pipeline.environment if pipeline else None,
+                failure_time=failure_time,
+            )
+            or []
+        )
+
+        deployment_chains = self.explanation_service.build_deployment_chains(
+            deployments, failure_time
+        )
+
+        deployment_correlations = (
+            self.deployment_correlation_service.correlate_deployments(
+                deployments=deployments,
+                failure_time=failure_time,
+                dependencies=dependencies,
+                logs=logs,
             )
         )
 
-        deployment_chains=(
-            self.explanation_service.build_deployment_chains(
-                deployments,
-                failure_time
-            )
+        evidence_chains.extend(deployment_chains)
+
+        repeated_errors = sum(
+            error.occurrences for error in error_patterns if error.occurrences >= 2
         )
 
-        evidence_chains.extend(
-            deployment_chains
+        strongest_deployment_score=None
+
+        if deployment_correlations:
+
+            strongest_deployment_score=max(
+                correlation.score
+                for correlation in deployment_correlations
+            )
+
+        risk_assessment = self.risk_assessment_service.calculate_risk(
+            failure_streak=(failure_pattern.failure_streak if failure_pattern else 0),
+            duration_anomaly=duration_anomaly.detected,
+            rows_read_anomaly=(row_count_anomaly.rows_read_anomaly),
+            rows_written_anomaly=(row_count_anomaly.rows_written_anomaly),
+            repeated_errors=repeated_errors,
+            dependency_issue=bool(dependency_analysis),
+            deployment_coorelation_score=(
+                strongest_deployment_score
+            ),
         )
 
         return IncidentReport(
@@ -620,4 +667,5 @@ class InvestigationService:
             recommendations=recommendation,
             evidence=assessment.evidence,
             evidence_chains=evidence_chains,
+            risk_assessment=risk_assessment
         )

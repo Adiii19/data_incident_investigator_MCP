@@ -4,5 +4,5 @@ class DependencyEvidence(BaseModel):
     dependency_name:str
     dependency_type:str
     matched_logs:int
-    confidenc:str
+    confidence:str
     evidence:list[str]

@@ -41,6 +41,7 @@ class PipelineService:
             pipeline_name:str,
             limit:int=50
     ):
+
         pipeline=self.repository.get_pipeline_by_name(
             pipeline_name
         )

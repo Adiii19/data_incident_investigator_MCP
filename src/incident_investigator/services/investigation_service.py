@@ -2,6 +2,7 @@ from codecs import replace_errors
 from datetime import timedelta
 from incident_investigator.models.incident import IncidentAssessment
 from incident_investigator.models.error_pattern import ErrorPattern
+from incident_investigator.models.incident_context import IncidentContext
 from incident_investigator.models.incident_report import IncidentReport
 from incident_investigator.models.investigation import (
     DurationAnomaly,
@@ -27,6 +28,7 @@ class InvestigationService:
         risk_assessment_service,
     ):
         self.pipeline_service = pipeline_service
+        self.repository = pipeline_service.repository
         self.log_analysis_service = log_analysis_service
         self.timeline_service = timeline_service
         self.explanation_service = explanation_service
@@ -635,13 +637,12 @@ class InvestigationService:
             error.occurrences for error in error_patterns if error.occurrences >= 2
         )
 
-        strongest_deployment_score=None
+        strongest_deployment_score = None
 
         if deployment_correlations:
 
-            strongest_deployment_score=max(
-                correlation.score
-                for correlation in deployment_correlations
+            strongest_deployment_score = max(
+                correlation.score for correlation in deployment_correlations
             )
 
         risk_assessment = self.risk_assessment_service.calculate_risk(
@@ -651,9 +652,7 @@ class InvestigationService:
             rows_written_anomaly=(row_count_anomaly.rows_written_anomaly),
             repeated_errors=repeated_errors,
             dependency_issue=bool(dependency_analysis),
-            deployment_coorelation_score=(
-                strongest_deployment_score
-            ),
+            deployment_correlation_score=(strongest_deployment_score),
         )
 
         return IncidentReport(
@@ -667,5 +666,33 @@ class InvestigationService:
             recommendations=recommendation,
             evidence=assessment.evidence,
             evidence_chains=evidence_chains,
-            risk_assessment=risk_assessment
+            risk_assessment=risk_assessment,
+        )
+
+    def get_latest_incident_context(
+        self, pipeline_name: str, log_limit: int = 50, run_limit: int = 10
+    ):
+        pipeline = self.repository.get_pipeline_by_name(pipeline_name)
+
+        if pipeline is None:
+            return None
+
+        latest_run = self.repository.get_latest_run(pipeline.id)
+
+        recent_runs = self.repository.get_recent_runs(pipeline.id, limit=run_limit)
+
+        dependencies = self.repository.get_pipeline_dependencies(pipeline.id)
+
+        logs = []
+
+        if latest_run is not None:
+            logs = self.repository.get_pipeline_logs(latest_run.id, limit=log_limit)
+
+        return IncidentContext(
+            pipeline_name=pipeline_name,
+            latest_run=latest_run,
+            recent_runs=recent_runs,
+            logs=logs,
+            dependencies=dependencies
+
         )

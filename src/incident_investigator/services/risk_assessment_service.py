@@ -59,9 +59,10 @@ class RiskAssessmentService:
                         "latest pipeline run was significantly"
                         "slower than historical runs."
                     )
-                
                 )
             )
+
+            score += 15
 
         if rows_read_anomaly:
             factors.append(
@@ -74,6 +75,8 @@ class RiskAssessmentService:
                     )
                 )
             )
+
+            score += 10
 
         if rows_written_anomaly:
 

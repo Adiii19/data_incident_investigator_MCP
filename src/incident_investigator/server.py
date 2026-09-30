@@ -1,12 +1,15 @@
 from mcp.server import MCPServer
+import time
+from datetime import datetime
+from typing import Annotated
+
+from pydantic import Field
+
 
 from incident_investigator.database.connection import engine
 from incident_investigator.models import recommendation
-from incident_investigator.models.requests import (
-    PipelineStatusRequest,
-    PipelineRunsRequest,
-)
 from incident_investigator.models.responses import PipelineStatusResponse
+from incident_investigator.observablity import create_investigation_id
 from incident_investigator.repositories.pipeline_repository import PipelineRepository
 from incident_investigator.services import explanation_service, investigation_service
 from incident_investigator.services import pipeline_service
@@ -25,11 +28,17 @@ from incident_investigator.services.deployment_correlation_service import(
 from incident_investigator.services.risk_assessment_service import (
     RiskAssessmentService,
 )
+import logging
+from incident_investigator.logging_config import (
+    configure_logging
+)
+
 
 mcp = MCPServer("Data Incident Investigator")
 repository = PipelineRepository(engine)
-
+configure_logging()
 service = PipelineService(repository)
+logger=logging.getLogger(__name__)
 
 health_service = HealthService(engine)
 log_analysis_service = LogAnalysisService()
@@ -61,12 +70,20 @@ investigation = InvestigationService(
 
 
 @mcp.tool()
-def get_pipeline_status(request: PipelineStatusRequest) -> PipelineStatusResponse:
+def get_pipeline_status(
+    pipeline_name: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="Name of the data pipeline to inspect.",
+        ),
+    ],
+) -> PipelineStatusResponse:
     """
     Get the current status and latest execution information
     for a data pipeline.
     """
-    result = service.get_pipeline_status(request.pipeline_name)
+    result = service.get_pipeline_status(pipeline_name)
 
     if result is None:
         return PipelineStatusResponse(found=False)
@@ -77,28 +94,49 @@ def get_pipeline_status(request: PipelineStatusRequest) -> PipelineStatusRespons
 
 
 @mcp.tool()
-def get_recent_runs(request: PipelineRunsRequest) -> dict:
+def get_recent_runs(
+    pipeline_name: Annotated[
+        str,
+        Field(min_length=1, description="Name of the pipeline"),
+    ],
+    start_time: Annotated[
+        datetime | None,
+        Field(description="Only include runs starting at or after this timestamp."),
+    ] = None,
+    end_time: Annotated[
+        datetime | None,
+        Field(description="Only include runs starting before or at this timestamp."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=100,
+            description="Maximum number of runs to return",
+        ),
+    ] = 10,
+) -> dict:
     """
     Get recent execution runs for a data pipeline.
     Use this when investigating pipeline history
     or looking for patterns across recent runs.
     """
     runs = service.get_recent_runs(
-        pipeline_name=request.pipeline_name,
-        start_time=request.start_time,
-        end_time=request.end_time,
-        limit=request.limit,
+        pipeline_name=pipeline_name,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
     )
 
     if runs is None:
         return {
             "found": False,
-            "pipeline_name": request.pipeline_name,
+            "pipeline_name": pipeline_name,
         }
 
     return {
         "found": True,
-        "pipeline_name": request.pipeline_name,
+        "pipeline_name": pipeline_name,
         "runs": [run.model_dump(mode="json") for run in runs],
     }
 
@@ -111,11 +149,46 @@ def investigate_pipeline(pipeline_name: str, limit: int = 10) -> dict:
 
     
     """
+    investigation_id=create_investigation_id()
+    start_time=time.perf_counter()
 
-    report = investigation.investigate_pipeline(
+    logger.info(
+        "event=investigation_started"
+        "pipeline=%s"
+        "investigation_id=%s",
         pipeline_name,
-        limit=limit,
+        investigation_id
     )
+
+    investigation
+    try:
+        report = investigation.investigate_pipeline(
+                pipeline_name,
+                limit=limit,
+            )
+    except Exception:
+
+        elapsed_ms=(
+            time.perf_counter()-start_time
+        )*1000
+
+        logger.exception(
+            "event=investigation_failed"
+            "pipeline=%s"
+            "investigation_id=%s"
+            "duration_ms=%.2f",
+            pipeline_name,
+            investigation_id,
+            elapsed_ms
+        )
+
+        raise
+
+    elapsed_ms=(
+        time.perf_counter()-start_time
+    )*1000
+
+
 
     if report is None:
         return {
@@ -123,90 +196,23 @@ def investigate_pipeline(pipeline_name: str, limit: int = 10) -> dict:
             "pipeline_name":pipeline_name
         }
 
+    logger.info(
+        "event=investigation_completed "
+        "pipeline=%s "
+        "investigation_id=%s "
+        "duration_ms=%.2f",
+        pipeline_name,
+        investigation_id,
+        elapsed_ms,
+    )
+
     return {
         "found": True,
+        "investigation_id": investigation_id,
         "report": report.model_dump(mode="json"),
     }
 
-    # runs = service.get_recent_runs(pipeline_name, limit=limit)
-
-    # if runs is None:
-    #     return {"found": False, "pipeline_name": pipeline_name}
-
-    # if not runs:
-    #     return {"found": False, "pipeline_name": pipeline_name}
-
-    # latest_run = runs[0]
-    # historical_runs = runs[1:]
-
-    # failure_analysis = investigation.analyze_failure_pattern(runs)
-
-    # duration_analysis = investigation.analyze_duration(
-    #     latest_run=latest_run, historical_runs=historical_runs
-    # )
-
-    # rows_count_analysis = investigation.analyze_row_counts(
-    #     latest_run,
-    #     historical_runs,
-    # )
-
-    # error_analysis = investigation.analyze_error_patterns(runs)
-
-    # incident_assessment = investigation.build_incident_assessment(
-    #     failure_analysis,
-    #     duration_analysis,
-    #     rows_count_analysis,
-    #     error_analysis,
-    # )
-
-    # recommendations = investigation.generate_recommendation(
-    #     incident_assessment.hypothesis, error_analysis
-    # )
-
-    # logs = service.get_latest_run_logs(pipeline_name)
-    # root_cause_candidates = []
-
-    # if logs:
-    #     root_cause_candidates = log_analysis_service.detect_root_cause_candidates(logs)
-
-    # dependencies = service.get_pipeline_dependencies(pipeline_name)
-
-    # logs = service.get_latest_run_logs(pipeline_name)
-
-    # dependency_analysis = []
-
-    # if logs and dependencies:
-    #     dependency_analysis = log_analysis_service.analyze_dependencies(
-    #         logs, dependencies
-    #     )
-
-    # return {
-    #     "found": True,
-    #     "pipeline_name": pipeline_name,
-    #     "analysis": {
-    #         "failure_pattern": (failure_analysis.model_dump(mode="json")),
-    #         "duration_anomaly": (duration_analysis.model_dump(mode="json")),
-    #         "row_count_anomaly": (rows_count_analysis.model_dump(mode="json")),
-    #         "error_patterns": (
-    #             pattern.model_dump(mode="json") for pattern in error_analysis
-    #         ),
-    #         "incident": incident_assessment.model_dump(mode="json"),
-    #         "recommendations": [
-    #             recommendation.model_dump(mode="json")
-    #             for recommendation in recommendations
-    #         ],
-    #         "root_cause_candidates": root_cause_candidates,
-    #     },
-
-    #     "dependency_analysis":[
-    #         result.model_dump(mode="json")
-    #         for result in dependency_analysis
-    #     ]
-    # }
-
-
-
-
+   
 @mcp.tool()
 def check_database_health() -> dict:
     """
@@ -222,6 +228,8 @@ def get_pipeline_logs(pipeline_name: str, limit: int = 50) -> dict:
     Get logs from the latest pipeline run.
     """
 
+    
+    
     logs = service.get_pipeline_logs(pipeline_name, limit)
 
     if logs is None:
@@ -304,6 +312,60 @@ def get_incident_timeline(
 
     }
 
+@mcp.tool()
+def get_recent_deployments(
+    pipeline_name:str,
+    window_minutes:int=120
+)->dict:
+
+    pipeline=service.get_pipeline(
+        pipeline_name
+    )
+
+    if pipeline is None:
+        return {
+            "found":False,
+            "pipeline_name":pipeline_name
+        }
+
+    latest_run=service.repository.get_latest_run(
+        pipeline.id
+    )
+
+    if latest_run is None:
+        return {
+
+            "found":False,
+            "pipeline_name":pipeline_name,
+            "message":"No pipeline runs found."
+
+        }
+
+    failure_time=(
+        latest_run.completed_at 
+        or latest_run.started_at
+    )
+
+    deployments=(
+        deployment_service.get_recent_deployments(
+            environment=pipeline.environment,
+            failure_time=failure_time,
+            window_minutes=window_minutes
+        )
+    )
+
+    return {
+
+        "found":True,
+        "pipeline_name":pipeline_name,
+        "deployments":[
+            deployment.model_dump(
+                mode="json"
+            )
+            for deployment in deployments
+        ]
+
+    }
 
 @mcp.resource(
     "pipeline://{pipeline_name}",
@@ -332,6 +394,70 @@ def get_pipeline_resource(
             mode="json"
         )
     }
+
+
+
+
+@mcp.resource(
+    "incident://{pipeline_name}/latest",
+    name="latest_incident_context",
+    description=(
+        "Get the latest operational context"
+        "for a pipeline incident"
+    ),
+    mime_type="application/json"
+)
+def get_latest_incident_context_resource(
+    pipeline_name:str,
+)->dict:
+
+    context=(
+        investigation.get_latest_incident_context(
+            pipeline_name
+        )
+    
+    )
+
+    if context is None:
+        return {
+            "found":False,
+            "pipeline_name":pipeline_name
+        }
+
+    return {
+        "found":True,
+        "context":context.model_dump(
+            mode="json"
+        )
+    }
+
+@mcp.prompt()
+def investigate_incident(
+    pipeline_name:str,
+)->str:
+
+    return f"""
+
+Investigate the data pipeline incident for:
+
+Pipeline:{pipeline_name}
+
+Follow this investigation process:
+1. Inspect the latest incident context.
+2. Review the latest pipeline run and recent run history.
+3. Analyse pipeline logs for recurring or significant errors.
+4. Examine pipeline dependencies.
+5. Review the incident timeline and events immediately 
+    preceding the failure.
+6. Check for recent deployments that may correlate with the incident.
+7. Compare all available evidence.
+8. Identify plausible root-cause hypotheses.
+9. Clearly distinguish observation, evidence, correlations and hypotheses.
+10. Provide actionable recommendations.
+
+Do not claim a root cause as confirmed unless the evidence supports it.
+
+"""
 
 
 if __name__ == "__main__":

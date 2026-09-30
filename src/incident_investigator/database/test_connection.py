@@ -2,9 +2,11 @@ from sqlalchemy import text
 
 from incident_investigator.database.connection import engine
 
-with engine.connect() as connection:
-    result=connection.execute(
-        text("""
+
+def main():
+    with engine.connect() as connection:
+        result = connection.execute(
+            text("""
                 SELECT 
                     id,
                     owner,
@@ -13,10 +15,13 @@ with engine.connect() as connection:
                 ORDER BY id
 
 """)
-    )
+        )
+
+        print(result)
+
+        for row in result:
+            print(row)
 
 
-    print(result)
-
-    for row in result:
-     print(row)
+if __name__ == "__main__":
+    main()
